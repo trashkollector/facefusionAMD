@@ -58,11 +58,22 @@ def create_inference_providers(execution_device_id : int, execution_providers : 
 				})
 			inference_providers.append((facefusion.choices.execution_provider_set.get(execution_provider), inference_option_set))
 
-		if execution_provider in [ 'directml', 'rocm' ]:
+  		# DIRECTML causing artificats and strange morphing when using FaceEditor
+		# Fix below specific for DirectML
+		if execution_provider == 'directml':
+			inference_providers.append((facefusion.choices.execution_provider_set.get(execution_provider),
+			{
+				'device_id': execution_device_id,
+				'performance_preference': 'high_performance',
+				'disable_metacommands': True
+			}))
+
+		if execution_provider == 'rocm':
 			inference_providers.append((facefusion.choices.execution_provider_set.get(execution_provider),
 			{
 				'device_id': execution_device_id
 			}))
+
 
 		if execution_provider == 'migraphx':
 			inference_option_set =\

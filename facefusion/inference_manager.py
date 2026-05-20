@@ -4,6 +4,7 @@ from time import sleep, time
 from typing import List
 
 from onnxruntime import InferenceSession
+import onnxruntime
 
 from facefusion import logger, process_manager, state_manager, translator
 from facefusion.app_context import detect_app_context
@@ -73,7 +74,17 @@ def create_inference_session(model_path : str, execution_device_id : int, execut
 
 	try:
 		inference_providers = create_inference_providers(execution_device_id, execution_providers)
-		inference_session = InferenceSession(model_path, providers = inference_providers)
+
+		# DIRECTML fix - this needed to fix artificacts occuring during FaceEditor
+		
+		session_options = onnxruntime.SessionOptions()
+		if any(p in execution_providers for p in [ 'directml', 'rocm' ]):
+			session_options.enable_mem_pattern = False
+			session_options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+			session_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
+			session_options.inter_op_num_threads = 1  # add this
+			session_options.intra_op_num_threads = 1  # and this
+		inference_session = InferenceSession(model_path, sess_options = session_options, providers = inference_providers)
 		logger.debug(translator.get('loading_model_succeeded').format(model_name = model_file_name, seconds = calculate_end_time(start_time)), __name__)
 		return inference_session
 
