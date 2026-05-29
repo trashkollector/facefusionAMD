@@ -13,6 +13,23 @@ from facefusion.face_store import get_static_faces, set_static_faces
 from facefusion.types import BoundingBox, Face, FaceLandmark5, FaceLandmarkSet, FaceScoreSet, Score, VisionFrame
 
 
+# We ONLY want prominent faces, forget about tiny faces in background
+def filter_prominent_faces(faces: List[Face], frame_width: int, frame_height: int) -> List[Face]:
+    if not faces:
+        return faces
+
+    def bbox_area(bbox: BoundingBox) -> float:
+        return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+    areas = [bbox_area(f.bounding_box) for f in faces]
+    largest_area = max(areas)
+
+    return [
+        face for face, area in zip(faces, areas)
+        if area >= largest_area * 0.3
+    ]
+
+
 def create_faces(vision_frame : VisionFrame, bounding_boxes : List[BoundingBox], face_scores : List[Score], face_landmarks_5 : List[FaceLandmark5]) -> List[Face]:
 	faces = []
 	nms_threshold = get_nms_threshold(state_manager.get_item('face_detector_model'), state_manager.get_item('face_detector_angles'))
@@ -119,8 +136,10 @@ def get_many_faces(vision_frames : List[VisionFrame]) -> List[Face]:
 					faces = create_faces(vision_frame, all_bounding_boxes, all_face_scores, all_face_landmarks_5)
 
 					if faces:
+						faces = filter_prominent_faces(faces, vision_frame.shape[1], vision_frame.shape[0])
 						many_faces.extend(faces)
 						set_static_faces(vision_frame, faces)
+
 	return many_faces
 
 
