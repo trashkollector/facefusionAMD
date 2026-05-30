@@ -10,7 +10,10 @@ from facefusion.types import Face, FaceSelectorOrder, Gender, Race, Score, Visio
 def select_faces(reference_vision_frame : VisionFrame, target_vision_frame : VisionFrame) -> List[Face]:
 	target_faces = get_many_faces([ target_vision_frame ])
 
-    # JT, limit MANY to 2
+    # Fork - when Many select find 2 FACES , 
+	# Purpose - when having says scene with many people in background
+	#           we don't want background faces enhanced
+	# 
 	if state_manager.get_item('face_selector_mode') == 'many':
 		return sort_and_filter_faces(target_faces)[:2]
 

@@ -13,7 +13,7 @@ from facefusion.face_store import get_static_faces, set_static_faces
 from facefusion.types import BoundingBox, Face, FaceLandmark5, FaceLandmarkSet, FaceScoreSet, Score, VisionFrame
 
 
-# We ONLY want prominent faces, forget about tiny faces in background
+# FORK - We ONLY want prominent faces, forget about tiny faces in background
 def filter_prominent_faces(faces: List[Face], frame_width: int, frame_height: int) -> List[Face]:
     if not faces:
         return faces
@@ -136,6 +136,7 @@ def get_many_faces(vision_frames : List[VisionFrame]) -> List[Face]:
 					faces = create_faces(vision_frame, all_bounding_boxes, all_face_scores, all_face_landmarks_5)
 
 					if faces:
+						# select promiment faces only - FORK
 						faces = filter_prominent_faces(faces, vision_frame.shape[1], vision_frame.shape[0])
 						many_faces.extend(faces)
 						set_static_faces(vision_frame, faces)
