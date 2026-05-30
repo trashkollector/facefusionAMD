@@ -10,12 +10,13 @@ from facefusion.types import Face, FaceSelectorOrder, Gender, Race, Score, Visio
 def select_faces(reference_vision_frame : VisionFrame, target_vision_frame : VisionFrame) -> List[Face]:
 	target_faces = get_many_faces([ target_vision_frame ])
 
-    # Fork - when Many select find 2 FACES , 
-	# Purpose - when having says scene with many people in background
-	#           we don't want background faces enhanced
-	# 
+    # fork - we now have additional options for 2 faces and 3 faces
 	if state_manager.get_item('face_selector_mode') == 'many':
+		return sort_and_filter_faces(target_faces)
+	if state_manager.get_item('face_selector_mode') == '2 faces':
 		return sort_and_filter_faces(target_faces)[:2]
+	if state_manager.get_item('face_selector_mode') == '3 faces':
+		return sort_and_filter_faces(target_faces)[:3]
 
 	if state_manager.get_item('face_selector_mode') == 'one':
 		target_face = get_one_face(sort_and_filter_faces(target_faces))
