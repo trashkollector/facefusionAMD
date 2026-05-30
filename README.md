@@ -2,7 +2,10 @@ FaceFusion
 ==========
 <img width="815" height="382" alt="fix" src="https://github.com/user-attachments/assets/d8fccd56-9fb4-4074-a37f-7bfce57ed20a" />
 
-Bug fixes for Face Editor and DirectML/AMD
+1. Bug fixes for Face Editor and DirectML/AMD
+2. Filter out small background faces (add prominent faces function)
+
+
 
 > Industry leading face manipulation platform.
 
