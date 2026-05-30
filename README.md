@@ -4,8 +4,8 @@ FaceFusion
 
 1. Bug fixes for Face Editor and DirectML/AMD
 
-2. 
-3. Filter out small background faces (add prominent faces function)
+   
+3. Now have ability to select 2 Faces or 3 Faces for finer control
 
 <img width="328" height="251" alt="3fac" src="https://github.com/user-attachments/assets/588b35d2-d013-4697-a31b-bf3d8a69af48" />
 
