@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from functools import lru_cache
-from typing import Tuple
+from types import ModuleType
+from typing import List, Tuple
 
 import cv2
 import numpy
@@ -8,9 +9,9 @@ import numpy
 import facefusion.jobs.job_manager
 import facefusion.jobs.job_store
 from facefusion import config, content_analyser, face_classifier, face_detector, face_landmarker, face_masker, face_recognizer, inference_manager, logger, state_manager, translator, video_manager
-from facefusion.common_helper import create_float_metavar
+from facefusion.common_helper import create_float_metavar, get_middle
 from facefusion.download import conditional_download_hashes, conditional_download_sources, resolve_download_url
-from facefusion.face_analyser import scale_face
+from facefusion.face_creator import scale_face
 from facefusion.face_helper import paste_back, scale_face_landmark_5, warp_face_by_face_landmark_5
 from facefusion.face_masker import create_box_mask
 from facefusion.face_selector import select_faces
@@ -22,7 +23,7 @@ from facefusion.processors.types import LivePortraitExpression, LivePortraitFeat
 from facefusion.program_helper import find_argument_group
 from facefusion.thread_helper import conditional_thread_semaphore, thread_semaphore
 from facefusion.types import ApplyStateItem, Args, DownloadScope, Face, FaceLandmark68, InferencePool, ModelOptions, ModelSet, ProcessMode, VisionFrame
-from facefusion.vision import read_static_image, read_static_video_frame
+from facefusion.vision import read_static_image, read_static_video_chunk, read_static_video_frame
 
 
 @lru_cache()
@@ -165,9 +166,17 @@ def apply_args(args : Args, apply_state_item : ApplyStateItem) -> None:
 	apply_state_item('face_editor_head_roll', args.get('face_editor_head_roll'))
 
 
+def get_common_modules() -> List[ModuleType]:
+	return [ content_analyser, face_classifier, face_detector, face_landmarker, face_masker, face_recognizer ]
+
+
 def pre_check() -> bool:
 	model_hash_set = get_model_options().get('hashes')
 	model_source_set = get_model_options().get('sources')
+
+	for common_module in get_common_modules():
+		if not common_module.pre_check():
+			return False
 
 	return conditional_download_hashes(model_hash_set) and conditional_download_sources(model_source_set)
 
@@ -188,27 +197,29 @@ def pre_process(mode : ProcessMode) -> bool:
 def post_process() -> None:
 	read_static_image.cache_clear()
 	read_static_video_frame.cache_clear()
+	read_static_video_chunk.cache_clear()
 	video_manager.clear_video_pool()
+
 	if state_manager.get_item('video_memory_strategy') in [ 'strict', 'moderate' ]:
 		clear_inference_pool()
+
 	if state_manager.get_item('video_memory_strategy') == 'strict':
-		content_analyser.clear_inference_pool()
-		face_classifier.clear_inference_pool()
-		face_detector.clear_inference_pool()
-		face_landmarker.clear_inference_pool()
-		face_masker.clear_inference_pool()
-		face_recognizer.clear_inference_pool()
+		for common_module in get_common_modules():
+			common_module.clear_inference_pool()
 
-
+# CLAUDE - black boxes fix
 def edit_face(target_face : Face, temp_vision_frame : VisionFrame) -> VisionFrame:
 	model_template = get_model_options().get('template')
 	model_size = get_model_options().get('size')
 	face_landmark_5 = scale_face_landmark_5(target_face.landmark_set.get('5/68'), 1.5)
 	crop_vision_frame, affine_matrix = warp_face_by_face_landmark_5(temp_vision_frame, face_landmark_5, model_template, model_size)
-	box_mask = create_box_mask(crop_vision_frame, state_manager.get_item('face_mask_blur'), (0, 0, 0, 0))
+    #CLAUDE FIX FOR BLOTCHINESS
+	box_mask = create_box_mask(crop_vision_frame, state_manager.get_item('face_mask_blur'), (0, 0, 25, 0))
 	crop_vision_frame = prepare_crop_frame(crop_vision_frame)
 	crop_vision_frame = apply_edit(crop_vision_frame, target_face.landmark_set.get('68'))
 	crop_vision_frame = normalize_crop_frame(crop_vision_frame)
+	if crop_vision_frame.mean() < 5.0:  # frame is basically black, skip paste
+		return temp_vision_frame
 	paste_vision_frame = paste_back(temp_vision_frame, crop_vision_frame, box_mask, affine_matrix)
 	return paste_vision_frame
 
@@ -476,20 +487,29 @@ def prepare_crop_frame(crop_vision_frame : VisionFrame) -> VisionFrame:
 	crop_vision_frame = numpy.expand_dims(crop_vision_frame.transpose(2, 0, 1), axis = 0).astype(numpy.float32)
 	return crop_vision_frame
 
-
 def normalize_crop_frame(crop_vision_frame : VisionFrame) -> VisionFrame:
 	crop_vision_frame = crop_vision_frame.transpose(1, 2, 0).clip(0, 1)
 	crop_vision_frame = (crop_vision_frame * 255.0)
+	crop_vision_frame = numpy.nan_to_num(crop_vision_frame, nan=0.0, posinf=255.0, neginf=0.0)
 	crop_vision_frame = crop_vision_frame.astype(numpy.uint8)[:, :, ::-1]
 	return crop_vision_frame
+
+# def normalize_crop_frame(crop_vision_frame : VisionFrame) -> VisionFrame:
+# 	crop_vision_frame = crop_vision_frame.transpose(1, 2, 0).clip(0, 1)
+# 	crop_vision_frame = (crop_vision_frame * 255.0)
+# 	crop_vision_frame = crop_vision_frame.astype(numpy.uint8)[:, :, ::-1]
+# 	return crop_vision_frame
 
 
 def process_frame(inputs : FaceEditorInputs) -> ProcessorOutputs:
 	reference_vision_frame = inputs.get('reference_vision_frame')
-	target_vision_frame = inputs.get('target_vision_frame')
+	source_vision_frames = inputs.get('source_vision_frames')
+	target_vision_frames = inputs.get('target_vision_frames')
 	temp_vision_frame = inputs.get('temp_vision_frame')
 	temp_vision_mask = inputs.get('temp_vision_mask')
-	target_faces = select_faces(reference_vision_frame, target_vision_frame)
+
+	target_vision_frame = get_middle(target_vision_frames)
+	target_faces = select_faces(reference_vision_frame, source_vision_frames, target_vision_frames)
 
 	if target_faces:
 		for target_face in target_faces:
