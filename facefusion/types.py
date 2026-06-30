@@ -1,5 +1,6 @@
 from collections import namedtuple
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, TypeAlias, TypedDict
+from threading import Lock
+from typing import Any, Callable, Dict, List, Literal, NotRequired, Optional, Tuple, TypeAlias, TypedDict
 
 import cv2
 import numpy
@@ -39,6 +40,7 @@ FaceSelectorRace = Literal['auto', 'white', 'black', 'latino', 'asian', 'indian'
 
 Face = namedtuple('Face',
 [
+	'origin',
 	'bounding_box',
 	'score_set',
 	'landmark_set',
@@ -49,8 +51,13 @@ Face = namedtuple('Face',
 	'gender',
 	'race'
 ])
+FaceSet = TypedDict('FaceSet',
+{
+	'lock': Lock,
+	'faces': NotRequired[List[Face]]
+})
+FaceStore : TypeAlias = Dict[str, FaceSet]
 FaceTrack : TypeAlias = Dict[int, Face]
-FaceStore : TypeAlias = Dict[str, List[Face]]
 
 Language = Literal['en']
 Locales : TypeAlias = Dict[Language, Dict[str, Any]]
@@ -120,7 +127,7 @@ TableContent : TypeAlias = Any
 FaceDetectorModel = Literal['many', 'retinaface', 'scrfd', 'yolo_face', 'yunet']
 FaceLandmarkerModel = Literal['many', '2dfan4', 'peppa_wutz']
 FaceDetectorSet : TypeAlias = Dict[FaceDetectorModel, List[str]]
-FaceSelectorMode = Literal['many', 'one', 'reference']
+FaceSelectorMode = Literal['many', 'one', 'reference','2 faces','3 faces']
 FaceSelectorOrder = Literal['left-right', 'right-left', 'top-bottom', 'bottom-top', 'small-large', 'large-small', 'best-worst', 'worst-best']
 FaceOccluderModel = Literal['many', 'xseg_1', 'xseg_2', 'xseg_3']
 FaceParserModel = Literal['bisenet_resnet_18', 'bisenet_resnet_34']
@@ -294,6 +301,7 @@ StateKey = Literal\
 	'reference_face_position',
 	'reference_face_distance',
 	'reference_frame_number',
+	'face_tracker_score',
 	'face_occluder_model',
 	'face_parser_model',
 	'face_mask_types',
@@ -306,6 +314,7 @@ StateKey = Literal\
 	'trim_frame_end',
 	'temp_frame_format',
 	'keep_temp',
+	'target_frame_amount',
 	'output_image_quality',
 	'output_image_scale',
 	'output_audio_encoder',
@@ -363,6 +372,7 @@ State = TypedDict('State',
 	'reference_face_position' : int,
 	'reference_face_distance' : float,
 	'reference_frame_number' : int,
+	'face_tracker_score' : Score,
 	'face_occluder_model' : FaceOccluderModel,
 	'face_parser_model' : FaceParserModel,
 	'face_mask_types' : List[FaceMaskType],
@@ -375,6 +385,7 @@ State = TypedDict('State',
 	'trim_frame_end' : int,
 	'temp_frame_format' : TempFrameFormat,
 	'keep_temp' : bool,
+	'target_frame_amount' : int,
 	'output_image_quality' : int,
 	'output_image_scale' : Scale,
 	'output_audio_encoder' : AudioEncoder,

@@ -12,6 +12,24 @@ from facefusion.face_recognizer import calculate_face_embedding
 from facefusion.types import BoundingBox, Face, FaceLandmark5, FaceLandmarkSet, FaceScoreSet, Score, VisionFrame
 
 
+# We ONLY want prominent faces, we are ignoring any faces significantly smaller than prominent ones
+def filter_prominent_faces(faces: List[Face], frame_width: int, frame_height: int) -> List[Face]:
+    if not faces:
+        return faces
+
+    def bbox_area(bbox: BoundingBox) -> float:
+        return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+    areas = [bbox_area(f.bounding_box) for f in faces]
+    largest_area = max(areas)
+
+    return [
+        face for face, area in zip(faces, areas)
+        if area >= largest_area * 0.3
+    ]
+
+
+
 def create_faces(vision_frame : VisionFrame, bounding_boxes : List[BoundingBox], face_scores : List[Score], face_landmarks_5 : List[FaceLandmark5]) -> List[Face]:
 	faces = []
 	nms_threshold = get_nms_threshold(state_manager.get_item('face_detector_model'), state_manager.get_item('face_detector_angles'))
@@ -46,7 +64,9 @@ def create_faces(vision_frame : VisionFrame, bounding_boxes : List[BoundingBox],
 		}
 		face_embedding, face_embedding_norm = calculate_face_embedding(vision_frame, face_landmark_set.get('5/68'))
 		gender, age, race = classify_face(vision_frame, face_landmark_set.get('5/68'))
+
 		faces.append(Face(
+			origin = 'detect',
 			bounding_box = bounding_box,
 			score_set = face_score_set,
 			landmark_set = face_landmark_set,
@@ -89,8 +109,11 @@ def get_many_faces(vision_frames : List[VisionFrame]) -> List[Face]:
 				faces = create_faces(vision_frame, all_bounding_boxes, all_face_scores, all_face_landmarks_5)
 
 				if faces:
-					many_faces.extend(faces)
-
+						# fork - filter out small faces , keep only prominent faces
+						# CLAUDE
+						faces = filter_prominent_faces(faces, vision_frame.shape[1], vision_frame.shape[0])
+						many_faces.extend(faces)
+	
 	return many_faces
 
 
@@ -101,10 +124,14 @@ def get_static_faces(vision_frames : List[VisionFrame]) -> List[Face]:
 		faces = face_store.get_faces(vision_frame)
 
 		if not faces:
-			faces = get_many_faces([ vision_frame ])
+			with face_store.resolve_lock(vision_frame):
+				faces = face_store.get_faces(vision_frame)
 
-			if faces:
-				face_store.set_faces(vision_frame, faces)
+				if not faces:
+					faces = get_many_faces([ vision_frame ])
+
+					if faces:
+						face_store.set_faces(vision_frame, faces)
 
 		many_faces.extend(faces)
 
@@ -119,7 +146,8 @@ def refill_faces(faces : List[Optional[Face]]) -> List[Face]:
 		if face:
 			for gap_index in range(anchor_index_previous + 1, index):
 				average_factor = (gap_index - anchor_index_previous) / (index - anchor_index_previous)
-				fill_faces.append(average_face_coordinates([ faces[anchor_index_previous], face ], average_factor))
+				average_face = average_face_geometry([faces[anchor_index_previous], face], average_factor)
+				fill_faces.append(average_face)
 
 			fill_faces.append(face)
 			anchor_index_previous = index
@@ -127,7 +155,7 @@ def refill_faces(faces : List[Optional[Face]]) -> List[Face]:
 	return fill_faces
 
 
-def average_face_coordinates(faces : List[Face], average_factor : float) -> Face:
+def average_face_geometry(faces : List[Face], average_factor : float) -> Face:
 	face_first = get_first(faces)
 	face_middle = get_middle(faces)
 	face_anchor = face_middle
@@ -144,6 +172,7 @@ def average_face_coordinates(faces : List[Face], average_factor : float) -> Face
 	}
 
 	return Face(
+		origin = 'refill',
 		bounding_box = average_points(face_first.bounding_box, face_middle.bounding_box, average_factor),
 		score_set = face_anchor.score_set,
 		landmark_set = landmark_set,
@@ -168,6 +197,7 @@ def average_face_identity(faces : List[Face]) -> Optional[Face]:
 			face_embeddings_norm.append(face.embedding_norm)
 
 		return Face(
+			origin = first_face.origin,
 			bounding_box = first_face.bounding_box,
 			score_set = first_face.score_set,
 			landmark_set = first_face.landmark_set,

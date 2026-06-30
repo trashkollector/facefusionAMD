@@ -207,19 +207,17 @@ def post_process() -> None:
 		for common_module in get_common_modules():
 			common_module.clear_inference_pool()
 
-# CLAUDE - black boxes fix
+
 def edit_face(target_face : Face, temp_vision_frame : VisionFrame) -> VisionFrame:
 	model_template = get_model_options().get('template')
 	model_size = get_model_options().get('size')
 	face_landmark_5 = scale_face_landmark_5(target_face.landmark_set.get('5/68'), 1.5)
 	crop_vision_frame, affine_matrix = warp_face_by_face_landmark_5(temp_vision_frame, face_landmark_5, model_template, model_size)
-    #CLAUDE FIX FOR BLOTCHINESS
+	#CLAUDE
 	box_mask = create_box_mask(crop_vision_frame, state_manager.get_item('face_mask_blur'), (0, 0, 25, 0))
 	crop_vision_frame = prepare_crop_frame(crop_vision_frame)
 	crop_vision_frame = apply_edit(crop_vision_frame, target_face.landmark_set.get('68'))
 	crop_vision_frame = normalize_crop_frame(crop_vision_frame)
-	if crop_vision_frame.mean() < 5.0:  # frame is basically black, skip paste
-		return temp_vision_frame
 	paste_vision_frame = paste_back(temp_vision_frame, crop_vision_frame, box_mask, affine_matrix)
 	return paste_vision_frame
 
@@ -487,18 +485,12 @@ def prepare_crop_frame(crop_vision_frame : VisionFrame) -> VisionFrame:
 	crop_vision_frame = numpy.expand_dims(crop_vision_frame.transpose(2, 0, 1), axis = 0).astype(numpy.float32)
 	return crop_vision_frame
 
+
 def normalize_crop_frame(crop_vision_frame : VisionFrame) -> VisionFrame:
 	crop_vision_frame = crop_vision_frame.transpose(1, 2, 0).clip(0, 1)
 	crop_vision_frame = (crop_vision_frame * 255.0)
-	crop_vision_frame = numpy.nan_to_num(crop_vision_frame, nan=0.0, posinf=255.0, neginf=0.0)
 	crop_vision_frame = crop_vision_frame.astype(numpy.uint8)[:, :, ::-1]
 	return crop_vision_frame
-
-# def normalize_crop_frame(crop_vision_frame : VisionFrame) -> VisionFrame:
-# 	crop_vision_frame = crop_vision_frame.transpose(1, 2, 0).clip(0, 1)
-# 	crop_vision_frame = (crop_vision_frame * 255.0)
-# 	crop_vision_frame = crop_vision_frame.astype(numpy.uint8)[:, :, ::-1]
-# 	return crop_vision_frame
 
 
 def process_frame(inputs : FaceEditorInputs) -> ProcessorOutputs:

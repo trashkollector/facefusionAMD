@@ -5,7 +5,6 @@ from time import sleep, time
 from typing import List
 
 from onnxruntime import InferenceSession
-import onnxruntime
 
 from facefusion import logger, process_manager, state_manager, translator
 from facefusion.app_context import detect_app_context
@@ -82,7 +81,6 @@ def create_inference_session(model_path : str, inference_providers : List[Infere
 	except Exception:
 		logger.error(translator.get('loading_model_failed').format(model_name = model_file_name), __name__)
 		fatal_exit(1)
-
 
 
 def get_inference_context(module_name : str, model_names : List[str], execution_device_id : int, execution_providers : List[ExecutionProvider]) -> str:
